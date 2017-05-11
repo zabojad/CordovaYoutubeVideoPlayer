@@ -42,11 +42,12 @@ public class YoutubeVideoPlayer extends CordovaPlugin {
 	}
 
 	private void openVideo(String videoId) {
+		final CordovaPlugin plugin = this;
 		cordova.getActivity().runOnUiThread(new Runnable() {
 		    @Override
 		    public void run() {
 			Intent intent = createYoutubeIntent(videoId);
-			cordova.startActivityForResult(this, intent, 242);
+			cordova.startActivityForResult(plugin, intent, 242);
 		    }
 		});
 	}
