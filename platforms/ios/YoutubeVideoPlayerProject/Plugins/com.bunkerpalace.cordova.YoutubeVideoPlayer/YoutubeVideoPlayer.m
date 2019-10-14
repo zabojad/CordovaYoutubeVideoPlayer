@@ -7,6 +7,7 @@
 
 #import "YoutubeVideoPlayer.h"
 #import "XCDYouTubeKit.h"
+#import <AVKit/AVKit.h>
 
 @implementation YoutubeVideoPlayer
 
@@ -18,12 +19,26 @@
     NSString* videoID = [command.arguments objectAtIndex:0];
     
     if (videoID != nil) {
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(playerItemDidPlayToEndTime:) name:AVPlayerItemDidPlayToEndTimeNotification object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(playerItemFailedToPlayToEndTime:) name:AVPlayerItemFailedToPlayToEndTimeNotification object:nil];
         
-        XCDYouTubeVideoPlayerViewController *videoPlayerViewController = [[XCDYouTubeVideoPlayerViewController alloc] initWithVideoIdentifier:videoID];
-        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(moviePlayerPlaybackDidFinish:) name:MPMoviePlayerPlaybackDidFinishNotification object:videoPlayerViewController.moviePlayer];
-        
-        [self.viewController presentMoviePlayerViewControllerAnimated:videoPlayerViewController];
-        
+        AVPlayerViewController *playerViewController = [AVPlayerViewController new];
+        [self.viewController presentViewController:playerViewController animated:YES completion:nil];
+
+        __weak AVPlayerViewController *weakPlayerViewController = playerViewController;
+        [[XCDYouTubeClient defaultClient] getVideoWithIdentifier:videoID completionHandler:^(XCDYouTubeVideo * _Nullable video, NSError * _Nullable error) {
+            if (video)
+            {
+                NSDictionary *streamURLs = video.streamURLs;
+                NSURL *streamURL = streamURLs[XCDYouTubeVideoQualityHTTPLiveStreaming] ?: streamURLs[@(XCDYouTubeVideoQualityHD720)] ?: streamURLs[@(XCDYouTubeVideoQualityMedium360)] ?: streamURLs[@(XCDYouTubeVideoQualitySmall240)];
+                weakPlayerViewController.player = [AVPlayer playerWithURL:streamURL];
+                [weakPlayerViewController.player play];
+            }
+            else
+            {
+                [self.viewController dismissViewControllerAnimated:YES completion:nil];
+            }
+        }];
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
         
     } else {
@@ -36,18 +51,25 @@
     _eventsCallbackId = command.callbackId;
 }
 
-- (void) moviePlayerPlaybackDidFinish:(NSNotification *)notification
+- (void) playerItemDidPlayToEndTime:(NSNotification *)notification
 {
+    [self playerItemDidFinish: true];
+}
+
+- (void) playerItemFailedToPlayToEndTime:(NSNotification *)notification
+{
+    [self playerItemDidFinish: false];
+}
+
+- (void) playerItemDidFinish:(bool)isSuccess
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:AVPlayerItemDidPlayToEndTimeNotification object:nil];
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:AVPlayerItemFailedToPlayToEndTimeNotification object:nil];
+    
     CDVPluginResult* pluginResult = nil;
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
-    
-    
-    [[NSNotificationCenter defaultCenter] removeObserver:self name:MPMoviePlayerPlaybackDidFinishNotification object:notification.object];
-    MPMovieFinishReason finishReason = [notification.userInfo[MPMoviePlayerPlaybackDidFinishReasonUserInfoKey] integerValue];
-    if (finishReason == MPMovieFinishReasonPlaybackError)
+    if (!isSuccess)
     {
-        NSError *error = notification.userInfo[XCDMoviePlayerPlaybackDidFinishErrorUserInfoKey];
-        // Handle error
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Playback Error"];
     }
     
